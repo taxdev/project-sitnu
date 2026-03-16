@@ -70,7 +70,7 @@ struct AccountView: View {
                 }) {
                     Image(systemName: "plus")
                         .frame(width: 44, height: 44)
-                }.disabled(!store.isReachable).sheet(isPresented: self.$addNavigationController.addsAccount) {
+                }.sheet(isPresented: self.$addNavigationController.addsAccount) {
                     SchoolSearchView()
                         .environmentObject(self.addNavigationController)
                         .environment(self.store)
