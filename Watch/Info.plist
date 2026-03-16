@@ -26,7 +26,7 @@
 		<string>UIInterfaceOrientationPortraitUpsideDown</string>
 	</array>
 	<key>WKCompanionAppBundleIdentifier</key>
-	<string>io.noim.Project-SITNU</string>
+	<string>com.taxdev.sitnu</string>
 	<key>WKWatchKitApp</key>
 	<true/>
 </dict>
