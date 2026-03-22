@@ -19,7 +19,7 @@ struct ContentView: View {
                 .foregroundColor(.secondary)
         } else {
             if watchConnectivityStore.currentlySelected != nil {
-                TimetableView(account: watchConnectivityStore.currentlySelected!)
+                TimetableView(account: watchConnectivityStore.currentlySelected!, accountCount: watchConnectivityStore.accounts.count)
             } else {
                 Text("You need to add at least one primary account");
             }

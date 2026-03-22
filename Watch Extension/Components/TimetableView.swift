@@ -10,13 +10,14 @@ import ClockKit
 
 struct TimetableView: View {
     let account: UntisAccount;
+    let accountCount: Int;
     @State private var currentDate = Calendar.current.startOfDay(for: Date())
     @State private var currentDateOffset = Calendar.current.startOfDay(for: Date())
     @State private var currentTab = 0
     
     var body: some View {
         InfinitePageView(selection: $currentDateOffset, currentDate: $currentDate, currentTab: $currentTab, before: { Calendar.current.date(byAdding: .day, value: -1, to: $0)! }, after: { Calendar.current.date(byAdding: .day, value: 1, to: $0)! }) { date in
-            _TimetableView(account: account, date: date)
+            _TimetableView(account: account, date: date, accountCount: accountCount)
         }
         .onChange(of: currentDate) { oldValue, newValue in
             log.debug("currentDate: \(formatDate(oldValue)) -> \(formatDate(newValue))")
@@ -41,12 +42,18 @@ struct TimetableView: View {
 struct _TimetableView: View {
     let account: UntisAccount;
     let date: Date;
+    let accountCount: Int;
+    @Environment(WatchConnectivityStore.self) var watchConnectivityStore;
     @State var untis: UntisClient?;
     @State var timegrid: Timegrid?;
     @State var periods: [Period]?;
     @State var subjects: [Subject]?;
     @State var checkedDate: Date = Date();
     @State var isAccountChanger: Bool = false;
+
+    var effectiveAccount: UntisAccount {
+        watchConnectivityStore.currentlySelected ?? account
+    }
     
     // Swipe detection
     @State var startPos : CGPoint = .zero
@@ -58,7 +65,6 @@ struct _TimetableView: View {
     
     @State var forceRefresh: Bool = false;
     @State var tabStyle = Color.gray.gradient
-        
     var body: some View {
         ScrollViewReader { reader in
             ScrollView {
@@ -76,7 +82,7 @@ struct _TimetableView: View {
                                 self.isDetail.toggle();
                             }
                         } label: {
-                            TimetableRowView(account: account, period: period, timegrid: self.timegrid, subjects: self.subjects)
+                            TimetableRowView(account: effectiveAccount, period: period, timegrid: self.timegrid, subjects: self.subjects)
                         }
                         .id(period.id)
                     }
@@ -97,24 +103,26 @@ struct _TimetableView: View {
                         }, force: true)
                     }
                 }
-                Divider()
-                Button("Change account") {
-                    self.isAccountChanger.toggle();
-                }
                 .id("Bottom")
-                .foregroundColor(.yellow)
-                .sheet(isPresented: $isAccountChanger, content: { AccountSelector(isOpen: $isAccountChanger) })
-                .onChange(of: date, initial: false) { oldValue, newValue in
-                    if oldValue < newValue {
-                        log.debug("Reset scroll position")
-                        reader.scrollTo("Top")
+                if accountCount > 1 {
+                    Divider()
+                    Button("Change account") {
+                        self.isAccountChanger.toggle();
                     }
-                    self.setShapeStyle()
-                    self.getTimegrid();
-                    self.getTimetable(finish: nil);
-                    self.getSubjects();
-                    self.reloadComplications(finish: nil);
+                    .foregroundColor(.yellow)
+                    .sheet(isPresented: $isAccountChanger, content: { AccountSelector(isOpen: $isAccountChanger) })
                 }
+            }
+            .onChange(of: date, initial: false) { oldValue, newValue in
+                if oldValue < newValue {
+                    log.debug("Reset scroll position")
+                    reader.scrollTo("Top")
+                }
+                self.setShapeStyle()
+                self.getTimegrid();
+                self.getTimetable(finish: nil);
+                self.getSubjects();
+                self.reloadComplications(finish: nil);
             }
             .onAppear() {
                 self.setShapeStyle()
@@ -132,7 +140,7 @@ struct _TimetableView: View {
             .containerBackground(self.tabStyle, for: .tabView)
         }
         .sheet(isPresented: $isDetail, content: {
-            PeriodDetailView(period: $selectedPeriod, subjects: self.subjects, timegrid: self.timegrid, acc: account)
+            PeriodDetailView(period: $selectedPeriod, subjects: self.subjects, timegrid: self.timegrid, acc: effectiveAccount)
         })
     }
     
@@ -149,7 +157,7 @@ struct _TimetableView: View {
     }
     
     func createClient() {
-        let credentials: BasicUntisCredentials = BasicUntisCredentials(username: self.account.username, password: self.account.password, server: self.account.server, school: self.account.school, authType: self.account.authType);
+        let credentials: BasicUntisCredentials = BasicUntisCredentials(username: self.effectiveAccount.username, password: self.effectiveAccount.password, server: self.effectiveAccount.server, school: self.effectiveAccount.school, authType: self.effectiveAccount.authType);
         self.untis = UntisClient(credentials: credentials);
     }
     
@@ -196,7 +204,7 @@ struct _TimetableView: View {
     
     func reloadComplications(finish: (() -> Void)?, force: Bool = false) {
         let finishCall = finish ?? {};
-        if !self.account.primary {
+        if !self.effectiveAccount.primary {
             return finishCall();
         }
         var lastImportTime: Int64?;

@@ -36,9 +36,13 @@ struct AddView: View {
     @State var basicCredentials: BasicUntisCredentials?;
     @Environment(WatchConnectivityStore.self) var store
     @EnvironmentObject var addNavigationController: AddNavigationController;
-    
+    @Environment(\.dismiss) var dismiss;
+
+    private let editingAccountId: UUID?;
+
     init(school: School) {
         self.school = school;
+        self.editingAccountId = nil;
         self.acc.useSecretLogin = school.useSecret;
         if !school.user.isEmpty {
             self.acc.username = school.user;
@@ -46,6 +50,23 @@ struct AddView: View {
         if !school.password.isEmpty {
             self.acc.password = school.password;
         }
+    }
+
+    init(existingAccount: UntisAccount) {
+        self.editingAccountId = existingAccount.id;
+        _school = State(initialValue: School(server: existingAccount.server, displayName: existingAccount.displayName, loginName: existingAccount.school, schoolId: 0, address: ""));
+        let store = UntisAccountStore();
+        store.username = existingAccount.username;
+        store.password = existingAccount.password;
+        store.useSecretLogin = existingAccount.authType == .SECRET;
+        store.setDisplayName = existingAccount.setDisplayName ?? "";
+        store.primary = existingAccount.primary;
+        store.preferShortRoom = existingAccount.preferShortRoom;
+        store.preferShortSubject = existingAccount.preferShortSubject;
+        store.preferShortTeacher = existingAccount.preferShortTeacher;
+        store.preferShortClass = existingAccount.preferShortClass;
+        store.showRoomInsteadOfTime = existingAccount.showRoomInsteadOfTime;
+        _acc = State(initialValue: store);
     }
     
     var body: some View {
@@ -83,7 +104,7 @@ struct AddView: View {
                     Text(self.error!)
                         .foregroundColor(.red)
                 }
-                Button("Test login and add", action: { self.testLoginAndAdd() })
+                Button(editingAccountId != nil ? "Test login and save" : "Test login and add", action: { self.testLoginAndAdd() })
                     .disabled(testing)
             }
         }
@@ -91,15 +112,11 @@ struct AddView: View {
     }
     
     func needsToBePrimary() -> Bool {
-        if self.store.accounts.count < 1 {
+        let otherAccounts = store.accounts.filter { $0.id != editingAccountId }
+        if otherAccounts.isEmpty {
             return true;
         }
-        for acc in self.store.accounts {
-            if acc.primary {
-                return false
-            }
-        }
-        return true;
+        return !otherAccounts.contains(where: { $0.primary })
     }
     
     func testLoginAndAdd() {
@@ -124,21 +141,27 @@ struct AddView: View {
     func handleUntisResponse(result: Swift.Result<Int64, Error>) {
         switch result {
         case .success:
-            let id = UUID();
             let primary = self.needsToBePrimary() || self.acc.primary;
             let setDisplayName: String? = self.acc.setDisplayName.isEmpty ? nil : self.acc.setDisplayName;
-            let acc = UntisAccount(id: id, username: self.acc.username, password: self.acc.password, server: self.school.server, school: self.school.loginName.replacingOccurrences(of: " ", with: "+").components(separatedBy: "+").map({ $0.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)! }).joined(separator: "+"), setDisplayName: setDisplayName, authType: self.acc.authType, primary: primary, preferShortRoom: self.acc.preferShortRoom, preferShortSubject: self.acc.preferShortSubject, preferShortTeacher: self.acc.preferShortTeacher, preferShortClass: self.acc.preferShortClass, showRoomInsteadOfTime: self.acc.showRoomInsteadOfTime);
+            let encodedSchool = self.school.loginName.replacingOccurrences(of: " ", with: "+").components(separatedBy: "+").map({ $0.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)! }).joined(separator: "+");
             if primary {
                 for (index, _) in self.store.accounts.enumerated() {
-                    if self.store.accounts[index].primary {
-                        self.store.accounts[index].primary = false;
-                    }
+                    self.store.accounts[index].primary = false;
                 }
             }
-            self.store.accounts.append(acc);
-            self.store.saveToKeyChain()
-            self.store.sync();
-            self.addNavigationController.addsAccount = false;
+            if let editId = editingAccountId, let existingIndex = self.store.accounts.firstIndex(where: { $0.id == editId }) {
+                let updated = UntisAccount(id: editId, username: self.acc.username, password: self.acc.password, server: self.school.server, school: encodedSchool, setDisplayName: setDisplayName, authType: self.acc.authType, primary: primary, preferShortRoom: self.acc.preferShortRoom, preferShortSubject: self.acc.preferShortSubject, preferShortTeacher: self.acc.preferShortTeacher, preferShortClass: self.acc.preferShortClass, showRoomInsteadOfTime: self.acc.showRoomInsteadOfTime);
+                self.store.accounts[existingIndex] = updated;
+                self.store.saveToKeyChain();
+                self.store.sync();
+                dismiss();
+            } else {
+                let acc = UntisAccount(id: UUID(), username: self.acc.username, password: self.acc.password, server: self.school.server, school: encodedSchool, setDisplayName: setDisplayName, authType: self.acc.authType, primary: primary, preferShortRoom: self.acc.preferShortRoom, preferShortSubject: self.acc.preferShortSubject, preferShortTeacher: self.acc.preferShortTeacher, preferShortClass: self.acc.preferShortClass, showRoomInsteadOfTime: self.acc.showRoomInsteadOfTime);
+                self.store.accounts.append(acc);
+                self.store.saveToKeyChain();
+                self.store.sync();
+                self.addNavigationController.addsAccount = false;
+            }
             break;
         case .failure(let error):
             print("Error: \(error.localizedDescription)")

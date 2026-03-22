@@ -46,10 +46,8 @@ final class WatchConnectivityStore: NSObject, WCSessionDelegate {
         
     func sessionReachabilityDidChange(_ session: WCSession) {
         log.debug("sessionReachabilityDidChange to \(session.isReachable)", "WatchConnectivityStore")
-        if session.isReachable {
-            isReachable = true
-        } else {
-            isReachable = false
+        DispatchQueue.main.async {
+            self.isReachable = session.isReachable
         }
     }
     
@@ -89,10 +87,12 @@ final class WatchConnectivityStore: NSObject, WCSessionDelegate {
             return
         }
         if case .credentialsSync(let accounts) = decodedData {
-            self.accounts = accounts
-            saveToKeyChain()
-            selectPrimaryAccount()
-            log.debug("Did receive new credentials and store them in keychain", context: "WatchConnectivityStore")
+            DispatchQueue.main.async {
+                self.accounts = accounts
+                self.saveToKeyChain()
+                self.selectPrimaryAccount()
+                log.debug("Did receive new credentials and store them in keychain", context: "WatchConnectivityStore")
+            }
         }
         if case .requestLogFile = decodedData {
             guard let delegate: ExtensionDelegate = WKExtension.shared().delegate as? ExtensionDelegate else {
@@ -196,8 +196,12 @@ final class WatchConnectivityStore: NSObject, WCSessionDelegate {
     func selectPrimaryAccount() {
         if accounts.count == 0 {
             currentlySelected = nil
+            return
         }
-        if currentlySelected != nil {
+        // If an account is already selected, refresh it from the updated accounts list
+        if let selected = currentlySelected,
+           let updated = accounts.first(where: { $0.id == selected.id }) {
+            currentlySelected = updated
             return
         }
         if let firstPrimaryIndex: Int = accounts.firstIndex(where: { $0.primary }) {

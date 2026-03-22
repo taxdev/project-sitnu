@@ -16,6 +16,7 @@ struct AccountView: View {
     @ObservedObject var addNavigationController: AddNavigationController = AddNavigationController();
     
     @State private var editMode = EditMode.inactive
+    @State private var editingAccount: UntisAccount? = nil
     let throttler = Throttler(minimumDelay: 1.0)
     
     var body: some View {
@@ -23,17 +24,25 @@ struct AccountView: View {
             VStack {
                 List {
                     ForEach(self.store.accounts) { (acc: UntisAccount) in
-                        if acc.primary {
-                            Text("\(acc.displayName) (Primary)")
-                        } else {
-                            Text(acc.displayName)
+                        Button(action: {
+                            if self.editMode == .active {
+                                self.editingAccount = acc
+                            }
+                        }) {
+                            if acc.primary {
+                                Text("\(acc.displayName) (Primary)")
+                            } else {
+                                Text(acc.displayName)
+                            }
                         }
+                        .foregroundColor(.primary)
                     }
                     .onDelete { (index) in
                         self.store.accounts.remove(atOffsets: index);
                         if self.store.accounts.firstIndex(where: { $0.primary }) == nil && self.store.accounts.count > 0 {
                             self.store.accounts[0].primary = true;
                         }
+                        self.store.saveToKeyChain();
                         self.store.sync();
                     }
                 }
@@ -42,6 +51,13 @@ struct AccountView: View {
                         store.sync()
                     }
                 })
+                .sheet(item: $editingAccount) { acc in
+                    NavigationView {
+                        AddView(existingAccount: acc)
+                            .environmentObject(AddNavigationController())
+                            .environment(self.store)
+                    }
+                }
                 .modifier(GroupedListModifier())
                 .environment(\.editMode, $editMode)
                 .navigationBarItems(leading: Button(action: {
